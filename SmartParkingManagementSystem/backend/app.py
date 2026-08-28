@@ -184,16 +184,46 @@ def login():
             "message": "Invalid email or password"
         }), 401
 
-    # Check password
-    password_correct = check_password_hash(
-        user["password"],
-        password
-    )
+    stored_password = user["password"]
+
+    password_correct = False
+    needs_rehash = False
+
+    # First try hashed password check
+    try:
+        password_correct = check_password_hash(stored_password, password)
+    except Exception:
+        password_correct = False
+
+    # Fallback for seeded plaintext passwords: accept and re-hash
+    if not password_correct and stored_password == password:
+        password_correct = True
+        needs_rehash = True
 
     if not password_correct:
         return jsonify({
             "message": "Invalid email or password"
         }), 401
+
+    # Re-hash plaintext-seeded passwords on first successful login
+    if needs_rehash:
+        try:
+            new_hashed = generate_password_hash(password)
+            re_conn = get_db_connection()
+            re_cur = re_conn.cursor()
+            re_cur.execute(
+                """
+                UPDATE users
+                SET password = %s
+                WHERE user_id = %s
+                """,
+                (new_hashed, user["user_id"])
+            )
+            re_conn.commit()
+            re_cur.close()
+            re_conn.close()
+        except Exception:
+            pass
 
     return jsonify({
         "message": "Login successful",
@@ -1177,6 +1207,24 @@ def admin_get_users():
     cursor = connection.cursor(dictionary=True)
 
     try:
+        # Support pagination for admin listing
+        try:
+            page = int(request.args.get("page", 1))
+            limit = int(request.args.get("limit", 50))
+        except Exception:
+            page = 1
+            limit = 50
+
+        if page < 1:
+            page = 1
+        if limit < 1 or limit > 500:
+            limit = 50
+
+        offset = (page - 1) * limit
+
+        # total count
+        cursor.execute("SELECT COUNT(*) AS cnt FROM users")
+        total = cursor.fetchone().get("cnt", 0)
 
         cursor.execute(
             """
@@ -1187,118 +1235,25 @@ def admin_get_users():
                 role
             FROM users
             ORDER BY user_id
-            """
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset)
         )
 
         users = cursor.fetchall()
 
-        return jsonify(users), 200
+        return jsonify({
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "users": users
+        }), 200
 
     finally:
 
         cursor.close()
         connection.close()
 
-    # =========================================================
-# ADMIN - GET BOOKINGS
-# =========================================================
-
-@app.route("/api/admin/bookings", methods=["GET"])
-def admin_get_bookings():
-
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-
-    try:
-
-        cursor.execute(
-            """
-            SELECT
-                b.booking_id,
-                u.name AS user_name,
-                u.email,
-                v.vehicle_number,
-                v.vehicle_type,
-                ps.slot_number,
-                b.booking_date,
-                b.start_time,
-                b.end_time,
-                b.booking_status
-
-            FROM bookings b
-
-            JOIN users u
-                ON b.user_id = u.user_id
-
-            JOIN vehicles v
-                ON b.vehicle_id = v.vehicle_id
-
-            JOIN parking_slots ps
-                ON b.slot_id = ps.slot_id
-
-            ORDER BY b.booking_date DESC, b.start_time DESC
-            """
-        )
-
-        bookings = cursor.fetchall()
-
-        return jsonify(bookings), 200
-
-    finally:
-
-        cursor.close()
-        connection.close()
-
-
-    # =========================================================
-# ADMIN - GET PAYMENTS
-# =========================================================
-
-@app.route("/api/admin/payments", methods=["GET"])
-def admin_get_payments():
-
-    connection = get_db_connection()
-    cursor = connection.cursor(dictionary=True)
-
-    try:
-
-        cursor.execute(
-            """
-            SELECT
-                p.payment_id,
-                p.booking_id,
-                u.name AS user_name,
-                u.email,
-                p.amount,
-                p.payment_method,
-                p.payment_status,
-                p.payment_date
-
-            FROM payments p
-
-            JOIN bookings b
-                ON p.booking_id = b.booking_id
-
-            JOIN users u
-                ON b.user_id = u.user_id
-
-            ORDER BY p.payment_date DESC
-            """
-        )
-
-        payments = cursor.fetchall()
-
-        return jsonify(payments), 200
-
-    finally:
-
-        cursor.close()
-        connection.close()
-
-
-    # =========================================================
-# ADMIN - DASHBOARD STATISTICS
-# =========================================================
 
 @app.route("/api/admin/stats", methods=["GET"])
 def admin_stats():
@@ -1307,51 +1262,27 @@ def admin_stats():
     cursor = connection.cursor(dictionary=True)
 
     try:
-
+        # Aggregate stats
         cursor.execute("SELECT COUNT(*) AS total_users FROM users")
-        total_users = cursor.fetchone()["total_users"]
+        total_users = cursor.fetchone().get("total_users", 0)
 
         cursor.execute("SELECT COUNT(*) AS total_vehicles FROM vehicles")
-        total_vehicles = cursor.fetchone()["total_vehicles"]
+        total_vehicles = cursor.fetchone().get("total_vehicles", 0)
 
         cursor.execute("SELECT COUNT(*) AS total_slots FROM parking_slots")
-        total_slots = cursor.fetchone()["total_slots"]
+        total_slots = cursor.fetchone().get("total_slots", 0)
 
-        cursor.execute(
-            """
-            SELECT COUNT(*) AS available_slots
-            FROM parking_slots
-            WHERE status = 'AVAILABLE'
-            """
-        )
-        available_slots = cursor.fetchone()["available_slots"]
+        cursor.execute("SELECT COUNT(*) AS available_slots FROM parking_slots WHERE status = 'AVAILABLE'")
+        available_slots = cursor.fetchone().get("available_slots", 0)
 
-        cursor.execute(
-            """
-            SELECT COUNT(*) AS total_bookings
-            FROM bookings
-            """
-        )
-        total_bookings = cursor.fetchone()["total_bookings"]
+        cursor.execute("SELECT COUNT(*) AS total_bookings FROM bookings")
+        total_bookings = cursor.fetchone().get("total_bookings", 0)
 
-        cursor.execute(
-            """
-            SELECT COUNT(*) AS active_bookings
-            FROM bookings
-            WHERE booking_status = 'CONFIRMED'
-            """
-        )
-        active_bookings = cursor.fetchone()["active_bookings"]
+        cursor.execute("SELECT COUNT(*) AS active_bookings FROM bookings WHERE booking_status = 'CONFIRMED'")
+        active_bookings = cursor.fetchone().get("active_bookings", 0)
 
-        cursor.execute(
-            """
-            SELECT
-                COALESCE(SUM(amount), 0) AS total_revenue
-            FROM payments
-            WHERE payment_status = 'Paid'
-            """
-        )
-        total_revenue = cursor.fetchone()["total_revenue"]
+        cursor.execute("SELECT COALESCE(SUM(amount),0) AS total_revenue FROM payments WHERE payment_status = 'SUCCESS'")
+        total_revenue = cursor.fetchone().get("total_revenue", 0)
 
         return jsonify({
             "total_users": total_users,
@@ -1360,13 +1291,149 @@ def admin_stats():
             "available_slots": available_slots,
             "total_bookings": total_bookings,
             "active_bookings": active_bookings,
-            "total_revenue": total_revenue
+            "total_revenue": float(total_revenue)
         }), 200
 
     finally:
-
         cursor.close()
         connection.close()
+
+
+@app.route("/api/admin/bookings", methods=["GET"])
+def admin_get_bookings():
+
+    # Paginated recent bookings with useful joins for admin
+    try:
+        page = int(request.args.get("page", 1))
+        limit = int(request.args.get("limit", 50))
+    except Exception:
+        page = 1
+        limit = 50
+
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 500:
+        limit = 50
+
+    offset = (page - 1) * limit
+
+    connection = get_db_connection()
+    cursor = connection.cursor(dictionary=True)
+
+    try:
+        # total count
+        cursor.execute("SELECT COUNT(*) AS cnt FROM bookings")
+        total = cursor.fetchone().get("cnt", 0)
+
+        cursor.execute(
+            """
+            SELECT
+                b.booking_id,
+                b.booking_date,
+                b.start_time,
+                b.end_time,
+                b.booking_status,
+                u.user_id,
+                u.name AS user_name,
+                v.vehicle_id,
+                v.vehicle_number,
+                v.vehicle_type,
+                ps.slot_id,
+                ps.slot_number
+            FROM bookings b
+            JOIN users u ON b.user_id = u.user_id
+            JOIN vehicles v ON b.vehicle_id = v.vehicle_id
+            JOIN parking_slots ps ON b.slot_id = ps.slot_id
+            ORDER BY b.booking_date DESC, b.start_time DESC
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset)
+        )
+
+        bookings = cursor.fetchall()
+
+        # ensure date/time values are JSON-ready
+        bookings = [
+            {k: json_ready(v) for k, v in bk.items()}
+            for bk in bookings
+        ]
+
+        return jsonify({
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "bookings": bookings
+        }), 200
+
+    finally:
+        cursor.close()
+        connection.close()
+
+
+@app.route("/api/admin/payments", methods=["GET"])
+def admin_get_payments():
+
+    try:
+        page = int(request.args.get("page", 1))
+        limit = int(request.args.get("limit", 50))
+    except Exception:
+        page = 1
+        limit = 50
+
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 500:
+        limit = 50
+
+    offset = (page - 1) * limit
+
+    connection = get_db_connection()
+    cursor = connection.cursor(dictionary=True)
+
+    try:
+        cursor.execute("SELECT COUNT(*) AS cnt FROM payments")
+        total = cursor.fetchone().get("cnt", 0)
+
+        cursor.execute(
+            """
+            SELECT
+                p.payment_id,
+                p.booking_id,
+                p.amount,
+                p.payment_method,
+                p.payment_status,
+                p.payment_date,
+                u.user_id,
+                u.name AS user_name
+            FROM payments p
+            JOIN bookings b ON p.booking_id = b.booking_id
+            JOIN users u ON b.user_id = u.user_id
+            ORDER BY p.payment_date DESC
+            LIMIT %s OFFSET %s
+            """,
+            (limit, offset)
+        )
+
+        payments = cursor.fetchall()
+
+        payments = [
+            {k: json_ready(v) for k, v in pay.items()}
+            for pay in payments
+        ]
+
+        return jsonify({
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "payments": payments
+        }), 200
+
+    finally:
+        cursor.close()
+        connection.close()
+
+# Note: Older duplicate admin endpoints were removed to avoid Flask endpoint collisions.
+# Use the paginated admin endpoints under `/api/admin/*` implemented earlier in this file.
 
 # =========================================================
 # START FLASK SERVER
