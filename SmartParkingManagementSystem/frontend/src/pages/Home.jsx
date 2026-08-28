@@ -52,7 +52,7 @@ function Home() {
 
             {/* Features */}
 
-            <section className="features-section">
+            <section id="features" className="features-section">
 
                 <div className="container">
 
@@ -90,7 +90,7 @@ function Home() {
                         </div>
 
 
-                        <div className="feature-card">
+                        <div id="vehicles" className="feature-card">
 
                             <span className="card-number">
                                 02
@@ -135,7 +135,7 @@ function Home() {
 
             {/* How It Works */}
 
-            <section className="steps-section">
+            <section id="how-it-works" className="steps-section">
 
                 <div className="container">
 

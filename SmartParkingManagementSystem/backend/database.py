@@ -2,10 +2,16 @@ import os
 from pathlib import Path
 
 import mysql.connector
-from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+# python-dotenv is optional at runtime; if it's not installed
+# we continue without loading a .env file so the module can
+# run under the system Python as well as the project's venv.
+try:
+    from dotenv import load_dotenv
+    BASE_DIR = Path(__file__).resolve().parent
+    load_dotenv(BASE_DIR / ".env")
+except Exception:
+    BASE_DIR = Path(__file__).resolve().parent
 
 
 def get_db_connection():

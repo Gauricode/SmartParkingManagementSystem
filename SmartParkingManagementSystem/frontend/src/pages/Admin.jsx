@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
+import "./Admin.css";
 
 import {
     getAdminStats,
@@ -58,27 +59,27 @@ function Admin() {
             setStats(statsData);
 
             setUsers(
-                Array.isArray(usersData)
-                    ? usersData
-                    : []
+                    Array.isArray(usersData)
+                        ? usersData
+                        : (usersData && usersData.users ? usersData.users : [])
             );
 
             setBookings(
-                Array.isArray(bookingsData)
-                    ? bookingsData
-                    : []
+                    Array.isArray(bookingsData)
+                        ? bookingsData
+                        : (bookingsData && bookingsData.bookings ? bookingsData.bookings : [])
             );
 
             setSlots(
-                Array.isArray(slotsData)
-                    ? slotsData
-                    : []
+                    Array.isArray(slotsData)
+                        ? slotsData
+                        : []
             );
 
             setPayments(
-                Array.isArray(paymentsData)
-                    ? paymentsData
-                    : []
+                    Array.isArray(paymentsData)
+                        ? paymentsData
+                        : (paymentsData && paymentsData.payments ? paymentsData.payments : [])
             );
 
         } catch (error) {
@@ -113,7 +114,7 @@ function Admin() {
 
             <Navbar />
 
-            <main>
+            <main className="admin-main">
 
                 <h1>Admin Dashboard</h1>
 
@@ -220,7 +221,8 @@ function Admin() {
 
                         <h2>Users</h2>
 
-                        <table border="1" cellPadding="8">
+                        <div className="admin-section">
+                        <table className="admin-table">
 
                             <thead>
 
@@ -264,6 +266,7 @@ function Admin() {
                             </tbody>
 
                         </table>
+                        </div>
 
 
                         <hr />
@@ -275,7 +278,8 @@ function Admin() {
 
                         <h2>Bookings</h2>
 
-                        <table border="1" cellPadding="8">
+                        <div className="admin-section">
+                        <table className="admin-table">
 
                             <thead>
 
@@ -346,6 +350,7 @@ function Admin() {
                             </tbody>
 
                         </table>
+                        </div>
 
 
                         <hr />
@@ -357,7 +362,8 @@ function Admin() {
 
                         <h2>Parking Slots</h2>
 
-                        <table border="1" cellPadding="8">
+                        <div className="admin-section">
+                        <table className="admin-table">
 
                             <thead>
 
@@ -401,6 +407,7 @@ function Admin() {
                             </tbody>
 
                         </table>
+                        </div>
 
 
                         <hr />
@@ -412,7 +419,8 @@ function Admin() {
 
                         <h2>Payments</h2>
 
-                        <table border="1" cellPadding="8">
+                        <div className="admin-section">
+                        <table className="admin-table">
 
                             <thead>
 
@@ -471,6 +479,7 @@ function Admin() {
                             </tbody>
 
                         </table>
+                        </div>
 
                     </>
 
